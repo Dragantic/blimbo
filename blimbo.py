@@ -21,13 +21,8 @@ def handle_args():
 		if argv[i] == '-p': # prepend
 			i += 1
 			p = argv[i]
-		elif argv[i] == '-d': # directory
-			i += 1
-			continue # evaluate on next iteration
 		elif path.isdir(argv[i]):
-			if argv[i][-1] == '/':
-				loc = argv[i][:-1]
-			else: loc = argv[i]
+			loc = argv[i][:-1] if argv[i][-1] == '/' else argv[i]
 		else: files.append(argv[i])
 		i += 1
 	if files: isloc = False
@@ -224,7 +219,8 @@ class BlimpWindow(Gtk.Window):
 		for row in rows:
 			blimp = model.get_value(row, self.idx)
 			blimps.remove(blimp)
-			# files.remove(blimp.full)
+			if not isloc:
+				files.remove(blimp.full)
 			model.remove(row)
 		self.count.set_text(plur('result'))
 		self.slect.unselect_all()

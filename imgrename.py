@@ -23,6 +23,8 @@ def ogler(files):
 	for x in files:
 		split = path.split(x)
 		name = path.splitext(split[1])
+		if name[0][0] == '.':
+			continue
 		pump = None
 		m = re.match(ptrnFA, name[0]) or re.match(ptrnDA, name[0])
 		if m:
@@ -127,6 +129,5 @@ class RenameWindow(BlimpWindow):
 prepend = b.handle_args()
 b.ogle(ogler)
 
-win = RenameWindow()
-win.show_all()
+RenameWindow().show_all()
 Gtk.main()

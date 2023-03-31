@@ -135,6 +135,5 @@ class ResizeWindow(BlimpWindow):
 percent = b.handle_args()
 b.ogle(ogler)
 
-win = ResizeWindow()
-win.show_all()
+ResizeWindow().show_all()
 Gtk.main()
