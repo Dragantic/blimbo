@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-import re, time
-from os import path, rename, system
+import os, re, time
+from sys import argv
+from PIL import Image
+from subprocess import Popen
 
 import blimbo as b
 from blimbo import Blimp, BlimpWindow, Gtk
-
 
 prepend = ''
 
@@ -16,17 +17,17 @@ ptrnFA = r'^(?P<pre>\d{10}\..+[\._-])*(?P<tag>\d{10})[\._-]' \
 
 ptrnDA = r'^(?P<pre>)_*(?P<title>(?:[_-]*[\(\)0-9A-Za-z+!])+)' \
 	+ r'_*_by_(?P<artist>(?:[_-]*[\(\)0-9A-Za-z+!])+)' \
-	+ r'[~_-](?P<tag>[0-9A-Za-z]{7}(?![0-9A-Za-z]+)(?:-pre)?)'
-
+	+ r'[~_-](?P<tag>[0-9A-Za-z]{7}(?![0-9A-Za-z]+)(?:-pre)?)$'
 
 def ogler(files):
 	for x in files:
-		split = path.split(x)
-		name = path.splitext(split[1])
-		if name[0][0] == '.':
+		split = os.path.split(x)
+		namext = os.path.splitext(split[1])
+		loc, name, ext = split[0], namext[0], namext[1]
+		if name[0] == '.':
 			continue
 		pump = None
-		m = re.match(ptrnFA, name[0]) or re.match(ptrnDA, name[0])
+		m = re.match(ptrnFA, name) or re.match(ptrnDA, name)
 		if m:
 			boobs, belly, booty = \
 				m.group('tag'), m.group('title'), m.group('artist')
@@ -40,77 +41,67 @@ def ogler(files):
 					booty += '_' + bust
 			pump = f'{booty}_{belly}.{boobs}'
 
-		if prepend or not b.isloc or not name[1]:
-			if not pump: pump = name[0]
-			pump = prepend + pump
+		if prepend or not b.isloc or not ext:
+			pump = prepend + (name if not pump else pump)
 
 		if pump:
-			b.blimps.append(Blimp(split[0], name[0], name[1], pump))
+			blimp = Blimp(loc, name, ext)
+			blimp.dup = bool(re.search(r'\([0-9]+\)$', name))
+			bxt = ext
+			try:
+				with Image.open(blimp.full) as img:
+					format = img.format
+					bxt = '.' + ('JPG' if format == 'JPEG' else format).lower()
+			except Exception as e:
+				print(f'{blimp.full}: {e}')
+			blimp.chx = (bxt != ext)
+			blimp.exist = (name != pump and os.path.isfile(f'{loc}/{pump}{bxt}'))
+			if blimp.exist:
+				count = 1
+				while os.path.isfile(f'{loc}/{pump} ({count}){bxt}'): count += 1
+				pump += f'({count})'
+			blimp.pump = pump + bxt
+			b.blimps.append(blimp)
 
 def pumper():
 	for x in b.blimps:
 		try:
-			if (x.dup or x.xst) and not prepend:
-				system(f'kioclient5 move "{x.full}" trash:/')
+			if (x.dup or x.exist) and not prepend:
+				Popen(['kioclient5', 'move', x.full, 'trash:/']).wait()
 			else:
-				rename(x.full, x.plump())
+				os.rename(x.full, f'{x.loc}/{x.pump}')
 		except Exception as e: print(f'{x.full}: {e}')
-
-def fromBlimps(blimps):
-	for blimp in blimps:
-		yield blimp.full
 
 
 class RenameWindow(BlimpWindow):
 	def __init__(self):
 		self.act = 'Rename'
-		idx = 2
-		model = Gtk.ListStore(str, str, object)
-		model.set_sort_func(0, b.comparepump, idx)
-		model.set_sort_func(1, b.comparedate, idx)
-		model.set_sort_column_id(1, Gtk.SortType.ASCENDING)
-		model.cols = ['Name', 'Date']
-		self.model = model
-		self.idx = idx
-		self.wid = 7
-		super().__init__()
+		model = Gtk.ListStore(object, str, str)
+		model.set_sort_func(1, b.comparepump, 0)
+		model.set_sort_func(2, b.comparedate, 0)
+		model.set_sort_column_id(2, Gtk.SortType.ASCENDING)
+		model.cols = ['_', 'Name', 'Date']
 
-		# set up the layout
-		grid = self.grid
-		butns = self.butns
-		scroll = Gtk.ScrolledWindow()
-		scroll.set_vexpand(True)
-		label = Gtk.Label(label='Prepend:')
-		prepd = Gtk.Entry(text=prepend)
-		chkloc = Gtk.CheckButton(label="Loc")
-		chkloc.set_active(b.isloc)
-		chkloc.connect("toggled", self.on_chkloc_toggled)
-		grid.attach_next_to(scroll, self.count, Gtk.PositionType.BOTTOM, 8, 16)
-		grid.attach_next_to(label   , scroll  , Gtk.PositionType.BOTTOM, 1, 1)
-		grid.attach_next_to(prepd   , label   , Gtk.PositionType.RIGHT , 3, 1)
-		grid.attach_next_to(chkloc  , prepd   , Gtk.PositionType.RIGHT , 1, 1)
-		grid.attach_next_to(butns[0], chkloc  , Gtk.PositionType.RIGHT , 1, 1)
-		for i, butn in enumerate(butns[1:]):
-			grid.attach_next_to(butn , butns[i], Gtk.PositionType.RIGHT , 1, 1)
-		scroll.add(self.view)
+		lbl_pre = Gtk.Label(label='Prepend:')
+		txt_pre = Gtk.Entry(text=prepend)
+		txt_pre.set_width_chars(5)
+		lbl_pre.wid, txt_pre.wid = 1, 2
+		widgets = [lbl_pre, txt_pre]
+		super().__init__(model, widgets)
+		self.txt_pre = txt_pre
+		self.feed()
 
-		self.fillerup()
-		self.prepd = prepd
-
-	def fillerup(self):
+	def feed(self):
 		for x in b.blimps:
-			name = x.name + x.ext + '\n' + x.pump + ('*' if x.chx else '') \
-			+ ('\n+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+' if x.dup or x.xst else '')
-			self.model.append([
-				 name
-				,time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(x.date))
-				,x
-			])
-		super().fillerup()
+			name = f'{x.name}{x.ext}\n{x.pump}{"*" if x.chx else ""}' \
+			+ ('\n+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+' if x.dup or x.exist else '')
+			date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(x.date))
+			self.model.append([x, name, date])
+		self.set_sensitives()
 
 	def on_rescan_clicked(self, button):
 		global prepend
-		prepend = self.prepd.get_text()
+		prepend = self.txt_pre.get_text()
 		b.ogle(ogler)
 		super().on_rescan_clicked(button)
 
@@ -118,15 +109,17 @@ class RenameWindow(BlimpWindow):
 		if super().on_commit_clicked(button) == Gtk.ResponseType.YES:
 			pumper()
 			self.destroy()
-
-	def on_chkloc_toggled(self, chk):
-		b.isloc = chk.get_active()
-		if not b.isloc:
-			b.files = list(fromBlimps(b.blimps))
 #end RenameWindow
 
-
-prepend = b.handle_args()
+i, j = 1, len(argv) - 1
+while i <= j:
+	if os.path.exists(argv[i]):
+		break
+	elif argv[i] == '-p' and i < j:
+		i += 1
+		prepend = argv[i]
+	i += 1
+b.default_args(i)
 b.ogle(ogler)
 
 RenameWindow().show_all()

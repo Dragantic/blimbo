@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
 
-import time
-from os import path, rename, system
+import os, time
+from sys import argv
+from PIL import Image
+from subprocess import Popen
 
 import blimbo as b
-from blimbo import Blimp, BlimpWindow, Image, Gtk
+from blimbo import Blimp, BlimpWindow, Gtk
 
-
-percent = ''
+percent = 0
 wide = 1.75
 minsize = 1.33
 
-
 def ogler(files):
 	for x in files:
-		split = path.split(x)
-		name = path.splitext(split[1])
-		size = path.getsize(x) / 1024000
+		split = os.path.split(x)
+		namext = os.path.splitext(split[1])
+		loc, name, ext = split[0], namext[0], namext[1]
+		size = os.path.getsize(x) / 1024000
 		types = ['.png', '.jpg', '.jpeg']
-		if size >= minsize and (name[1] in types) or not b.isloc:
+		if size >= minsize and (ext in types) or not b.isloc:
 			try:
 				with Image.open(x) as img:
 					width, height = img.size
 					asp = width / height
 					if percent:
-						pct = float(percent) / 100
+						pct = percent / 100
 					else:
 						pct = 1
 						swid = 1920
@@ -39,9 +40,12 @@ def ogler(files):
 							width *= pct
 						if width > swid:
 							pct *= swid / width
-					if pct < 0.999 or name[1] != '.jpg':
-						pump = {'size':size, 'pct':pct, 'asp':asp}
-						b.blimps.append(Blimp(split[0], name[0], name[1], pump))
+					if pct < 0.999 or ext != '.jpg':
+						blimp = Blimp(loc, name, ext)
+						blimp.size = f'{size:.2f}MB'
+						blimp.asp = asp
+						blimp.pct = pct
+						b.blimps.append(blimp)
 			except Exception as e: print(f'{x}: {e}')
 	b.blimps.sort(key=lambda x: x.date)
 
@@ -53,13 +57,13 @@ def pumper():
 			with Image.open(full) as img:
 				if img.format == 'JPEG':
 					old = f'{x.loc}/{x.name}_old{x.ext}'
-					rename(full, old)
+					os.rename(full, old)
 					full = old
 
 				(width, height) = (int(img.width * x.pct), int(img.height * x.pct))
 				img = img.resize((width, height)).convert('RGB')
 				img.save(f'{x.loc}/{x.name}.jpg')
-			system(f'kioclient5 move "{full}" trash:/')
+			Popen(['kioclient5', 'move', full, 'trash:/']).wait()
 		except Exception as e:
 			print(f'{full}: {e}')
 
@@ -67,61 +71,42 @@ def pumper():
 class ResizeWindow(BlimpWindow):
 	def __init__(self):
 		self.act = 'Resize'
-		idx = 4
-		model = Gtk.ListStore(str, str, str, str, object)
-		model.set_sort_func(0, b.comparename, idx)
-		model.set_sort_func(1, b.comparesize, idx)
-		model.set_sort_func(2, b.compareext , idx)
-		model.set_sort_func(3, b.comparedate, idx)
-		model.set_sort_column_id(3, Gtk.SortType.ASCENDING)
-		model.cols = ['Name', 'Size', 'Ext', 'Date']
-		self.model = model
-		self.idx = idx
-		self.wid = 8
-		super().__init__()
+		model = Gtk.ListStore(object, str, str, str, str)
+		model.set_sort_func(1, b.comparename, 0)
+		model.set_sort_func(2, b.comparesize, 0)
+		model.set_sort_func(3, b.compareext , 0)
+		model.set_sort_func(4, b.comparedate, 0)
+		model.set_sort_column_id(4, Gtk.SortType.ASCENDING)
+		model.cols = ['_', 'Name', 'Size', 'Ext', 'Date']
 
-		# set up the layout
-		grid = self.grid
-		butns = self.butns
-		scroll = Gtk.ScrolledWindow()
-		scroll.set_vexpand(True)
-		lblpct = Gtk.Label(label='Percent:')
-		prcnt = Gtk.Entry(text=percent)
-		lblsiz = Gtk.Label(label='Size (MB):')
-		msize = Gtk.Entry(text=minsize)
-		grid.attach_next_to(scroll, self.count, Gtk.PositionType.BOTTOM, 9, 16)
-		grid.attach_next_to(lblpct  , scroll  , Gtk.PositionType.BOTTOM, 1, 1)
-		grid.attach_next_to(prcnt   , lblpct  , Gtk.PositionType.RIGHT , 2, 1)
-		grid.attach_next_to(lblsiz  , prcnt   , Gtk.PositionType.RIGHT , 1, 1)
-		grid.attach_next_to(msize   , lblsiz  , Gtk.PositionType.RIGHT , 2, 1)
-		grid.attach_next_to(butns[0], msize   , Gtk.PositionType.RIGHT , 1, 1)
-		for i, butn in enumerate(butns[1:]):
-			grid.attach_next_to(butn , butns[i], Gtk.PositionType.RIGHT , 1, 1)
-		scroll.add(self.view)
+		lbl_pct = Gtk.Label(label='Percent:')
+		txt_pct = Gtk.Entry(text=percent)
+		txt_pct.set_width_chars(5)
+		lbl_siz = Gtk.Label(label='Size (MB):')
+		txt_siz = Gtk.Entry(text=minsize)
+		txt_siz.set_width_chars(5)
+		lbl_pct.wid, txt_pct.wid, lbl_siz.wid, txt_siz.wid = 1, 1, 1, 1
+		widgets = [lbl_pct, txt_pct, lbl_siz, txt_siz]
+		super().__init__(model, widgets)
+		self.txt_pct = txt_pct
+		self.txt_siz = txt_siz
+		self.feed()
 
-		self.fillerup()
-		self.prcnt = prcnt
-		self.msize = msize
-
-	def fillerup(self):
+	def feed(self):
 		tall = 1/wide
 		for x in b.blimps:
 			dscrp = ''
 			if x.asp <= tall: dscrp = ' (Tall Portrait)'
 			elif x.asp >= wide: dscrp = ' (Wide Landscape)'
-			self.model.append([
-				 f'{x.name}{x.ext}\n{x.pct*100:.2f}%, {x.asp:.2f}{dscrp}'
-				,x.size
-				,x.ext
-				,time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(x.date))
-				,x
-			])
-		super().fillerup()
+			name = f'{x.name}{x.ext}\n{x.pct*100:.2f}%, {x.asp:.2f}{dscrp}'
+			date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(x.date))
+			self.model.append([x, name, x.size, x.ext, date])
+		self.set_sensitives()
 
 	def on_rescan_clicked(self, button):
 		global percent, minsize
-		percent = self.prcnt.get_text()
-		minsize = float(self.msize.get_text())
+		percent = float(self.txt_pct.get_text())
+		minsize = float(self.txt_siz.get_text())
 		b.ogle(ogler)
 		super().on_rescan_clicked(button)
 
@@ -131,8 +116,19 @@ class ResizeWindow(BlimpWindow):
 			self.destroy()
 #end ResizeWindow
 
-
-percent = b.handle_args()
+i, j = 1, len(argv) - 1
+while i <= j:
+	if os.path.exists(argv[i]):
+		break
+	elif i < j:
+		if argv[i] == '-p':
+			i += 1
+			percent = float(argv[i])
+		elif argv[i] == '-m':
+			i += 1
+			minsize = float(argv[i])
+	i += 1
+b.default_args(i)
 b.ogle(ogler)
 
 ResizeWindow().show_all()
