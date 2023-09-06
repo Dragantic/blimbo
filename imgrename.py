@@ -10,7 +10,7 @@ from blimbo import Blimp, BlimpWindow, Gtk
 
 prepend = ''
 
-ptrnFA = r'^(?P<pre>\d{10}\..+[\._-])*(?P<tag>\d{10})[\._-]' \
+ptrnFA = r'^(?P<pre>\d{7,}\..+[\._-])*(?P<tag>\d{7,})[\._]' \
 	+ r'(?P<artist>[\.\~0-9A-Za-z-]+)_[_-]*' \
 	+ r'(?P<title>(?:[_-]*(?!\.(?:png|jpe?g|gif|swf)$)' \
 	+ r'(?:[\.\(\)\[\]\{\} 0-9A-Za-z+%!,]|[^\x00-\x80]))+)'
@@ -19,7 +19,26 @@ ptrnDA = r'^(?P<pre>)_*(?P<title>(?:[_-]*[\(\)0-9A-Za-z+!])+)' \
 	+ r'_*_by_(?P<artist>(?:[_-]*[\(\)0-9A-Za-z+!])+)' \
 	+ r'[~_-](?P<tag>[0-9A-Za-z]{7}(?![0-9A-Za-z]+)(?:-pre)?)$'
 
-def ogler(files):
+class Rename(Blimp):
+	def __init__(self, loc:str, name:str, ext:str, pump:str):
+		super().__init__(loc, name, ext)
+		self.dup = bool(re.search(r'\([0-9]+\)$', name))
+		bxt = ext
+		try:
+			with Image.open(self.full) as img:
+				fmt = img.format
+				bxt = '.' + str('JPG' if fmt == 'JPEG' else fmt).lower()
+		except Exception as e:
+			print(f'{self.full}: {e}')
+		self.chx = (bxt != ext)
+		self.exist = (name != pump and os.path.isfile(f'{loc}/{pump}{bxt}'))
+		if self.exist:
+			count = 1
+			while os.path.isfile(f'{loc}/{pump} ({count}){bxt}'): count += 1
+			pump += f'({count})'
+		self.pump = pump + bxt
+
+def ogler(files: list[str]):
 	for x in files:
 		split = os.path.split(x)
 		namext = os.path.splitext(split[1])
@@ -45,26 +64,12 @@ def ogler(files):
 			pump = prepend + (name if not pump else pump)
 
 		if pump:
-			blimp = Blimp(loc, name, ext)
-			blimp.dup = bool(re.search(r'\([0-9]+\)$', name))
-			bxt = ext
-			try:
-				with Image.open(blimp.full) as img:
-					format = img.format
-					bxt = '.' + ('JPG' if format == 'JPEG' else format).lower()
-			except Exception as e:
-				print(f'{blimp.full}: {e}')
-			blimp.chx = (bxt != ext)
-			blimp.exist = (name != pump and os.path.isfile(f'{loc}/{pump}{bxt}'))
-			if blimp.exist:
-				count = 1
-				while os.path.isfile(f'{loc}/{pump} ({count}){bxt}'): count += 1
-				pump += f'({count})'
-			blimp.pump = pump + bxt
-			b.blimps.append(blimp)
+			b.blimps.append(Rename(loc, name, ext, pump))
 
 def pumper():
 	for x in b.blimps:
+		if not isinstance(x, Rename):
+			continue
 		try:
 			if (x.dup or x.exist) and not prepend:
 				Popen(['kioclient5', 'move', x.full, 'trash:/']).wait()
@@ -93,6 +98,8 @@ class RenameWindow(BlimpWindow):
 
 	def feed(self):
 		for x in b.blimps:
+			if not isinstance(x, Rename):
+				continue
 			name = f'{x.name}{x.ext}\n{x.pump}{"*" if x.chx else ""}' \
 			+ ('\n+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+' if x.dup or x.exist else '')
 			date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(x.date))

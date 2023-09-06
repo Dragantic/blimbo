@@ -1,5 +1,6 @@
 import os
 from sys import argv
+from typing import Callable
 from subprocess import Popen
 
 import gi
@@ -10,7 +11,7 @@ loc: str = '.'
 isloc: bool = True
 files: list[str] = []
 
-def default_args(i):
+def default_args(i: int):
 	global loc, isloc
 	while i < len(argv):
 		if os.path.isdir(argv[i]):
@@ -22,14 +23,14 @@ def default_args(i):
 loc = os.path.abspath(os.path.expanduser(loc))
 
 class Blimp:
-	def __init__(self, loc, name, ext):
+	def __init__(self, loc:str, name:str, ext:str):
 		self.loc, self.name, self.ext = loc, name, ext
 		self.full = f'{loc}/{name}{ext}'
 		self.date = os.path.getmtime(self.full)
 
 blimps: list[Blimp] = []
 
-def ogle(ogler):
+def ogle(ogler: Callable):
 	global blimps, files
 	blimps = []
 	if isloc:
@@ -38,13 +39,13 @@ def ogle(ogler):
 			break
 	ogler(files)
 
-def open_file(filename):
+def open_file(filename: str):
 	Popen(['kde-open5', filename]).wait()
 
-def show_in_file_manager(filename):
+def show_in_file_manager(filename: str):
 	Popen(['dolphin', '--select', filename]).wait()
 
-def plur(noun):
+def plur(noun: str):
 	count = len(blimps)
 	return f"{count} {noun}{'s' if count != 1 else ''}"
 
@@ -169,7 +170,7 @@ class BlimpWindow(Gtk.Window):
 		self.model   = model
 		self.popup   = popup
 
-	def feed():
+	def feed(self):
 		raise NotImplementedError()
 
 	def set_sensitives(self):

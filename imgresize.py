@@ -9,10 +9,24 @@ import blimbo as b
 from blimbo import Blimp, BlimpWindow, Gtk
 
 percent = 0
-wide = 1.75
-minsize = 1.33
+minsize = 1.33 # megabytes
 
-def ogler(files):
+aspect_wide = 7 / 4
+aspect_tall = 4 / 7
+
+max_width  = 2880
+max_height = 1620
+portrait_width   = 1600
+landscape_height = 1350
+
+class Resize(Blimp):
+	def __init__(self, loc:str, name:str, ext:str, size:float, asp:float, pct:float):
+		super().__init__(loc, name, ext)
+		self.size = f'{size:.2f}MB'
+		self.asp = asp
+		self.pct = pct
+
+def ogler(files: list[str]):
 	for x in files:
 		split = os.path.split(x)
 		namext = os.path.splitext(split[1])
@@ -27,43 +41,47 @@ def ogler(files):
 					if percent:
 						pct = percent / 100
 					else:
-						pct = 1
-						swid = 1920
-						shgt = 1080
-						if width > height*wide:
-							width /= (width / swid)
-						elif height > width*wide:
-							height /= (height / shgt)
-							swid = 1280
-						if height > shgt:
-							pct = shgt / height
+						pct = 1.0
+						max_w = max_width
+						max_h = max_height
+
+						# if wide or tall, constrain only the smaller dimension
+						if asp >= aspect_wide:
+							width = max_width # bypass the width constraint
+							max_h = landscape_height
+						elif asp <= aspect_tall:
+							height = max_height # bypass the height constraint
+							max_w = portrait_width
+
+						if height > max_h:
+							pct *= max_h / height
 							width *= pct
-						if width > swid:
-							pct *= swid / width
+						if width > max_w:
+							pct *= max_w / width
 					if pct < 0.999 or ext != '.jpg':
-						blimp = Blimp(loc, name, ext)
-						blimp.size = f'{size:.2f}MB'
-						blimp.asp = asp
-						blimp.pct = pct
-						b.blimps.append(blimp)
+						b.blimps.append(Resize(loc, name, ext, size, asp, pct))
 			except Exception as e: print(f'{x}: {e}')
 	b.blimps.sort(key=lambda x: x.date)
 
 def pumper():
 	for x in b.blimps:
+		if not isinstance(x, Resize):
+			continue
 		full = x.full
 		try:
 			# ext = x.ext + ('[0]' if x.ext == '.gif' else '')
 			with Image.open(full) as img:
-				if img.format == 'JPEG':
-					old = f'{x.loc}/{x.name}_old{x.ext}'
-					os.rename(full, old)
-					full = old
-
-				(width, height) = (int(img.width * x.pct), int(img.height * x.pct))
-				img = img.resize((width, height)).convert('RGB')
-				img.save(f'{x.loc}/{x.name}.jpg')
-			Popen(['kioclient5', 'move', full, 'trash:/']).wait()
+				fmt = img.format
+				dimensions = (round(img.width * x.pct), round(img.height * x.pct))
+				img = img.resize(dimensions).convert('RGB')
+				if fmt == 'JPEG':
+					new = f'{x.loc}/{x.name}_new.jpg'
+					img.save(new)
+					Popen(['kioclient5', 'move', full, 'trash:/']).wait()
+					os.rename(new, full)
+				else:
+					img.save(f'{x.loc}/{x.name}.jpg')
+					Popen(['kioclient5', 'move', full, 'trash:/']).wait()
 		except Exception as e:
 			print(f'{full}: {e}')
 
@@ -93,11 +111,12 @@ class ResizeWindow(BlimpWindow):
 		self.feed()
 
 	def feed(self):
-		tall = 1/wide
 		for x in b.blimps:
+			if not isinstance(x, Resize):
+				continue
 			dscrp = ''
-			if x.asp <= tall: dscrp = ' (Tall Portrait)'
-			elif x.asp >= wide: dscrp = ' (Wide Landscape)'
+			if   x.asp >= aspect_wide: dscrp = ' (Wide Landscape)'
+			elif x.asp <= aspect_tall: dscrp = ' (Tall Portrait)'
 			name = f'{x.name}{x.ext}\n{x.pct*100:.2f}%, {x.asp:.2f}{dscrp}'
 			date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(x.date))
 			self.model.append([x, name, x.size, x.ext, date])
