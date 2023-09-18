@@ -2,15 +2,17 @@
 
 import os, time
 from sys import argv
-from PIL import Image
+from PIL import Image, ImageFile
 from subprocess import Popen
 
 import blimbo as b
 from blimbo import Blimp, BlimpWindow, Gtk
 
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 percent = 0
 minsize = 1.33 # megabytes
-types = ['.png', '.jpg', '.jpeg']
+types = ['.png', '.jpg', '.jpeg', '.gif']
 
 aspect_wide = 7 / 4
 aspect_tall = 4 / 7
@@ -26,6 +28,7 @@ class Resize(Blimp):
 		self.size = f'{size:.2f}MB'
 		self.asp = asp
 		self.pct = pct
+		self.vid = False
 
 def ogler(files: list[str]):
 	for x in files:
@@ -33,8 +36,16 @@ def ogler(files: list[str]):
 		namext = os.path.splitext(split[1])
 		loc, name, ext = split[0], namext[0], namext[1]
 		size = os.path.getsize(x) / 1024000
-		if size >= minsize and (ext in types) or not b.isloc:
-			try:
+		try:
+			if ext == '.gif' and ext in types:
+				with Image.open(x) as img:
+					width, height = img.size
+					resize = Resize(loc, name, ext, size, width / height, 1.0)
+					if img.n_frames > 1:
+						resize.vid = True
+					b.blimps.append(resize)
+					continue
+			if size >= minsize and (ext in types) or not b.isloc:
 				with Image.open(x) as img:
 					width, height = img.size
 					asp = width / height
@@ -60,7 +71,8 @@ def ogler(files: list[str]):
 							pct *= max_w / width
 					if pct < 0.999 or ext != '.jpg':
 						b.blimps.append(Resize(loc, name, ext, size, asp, pct))
-			except Exception as e: print(f'{x}: {e}')
+		except Exception as e:
+			print(f'{x}: {e}')
 	b.blimps.sort(key=lambda x: x.date)
 
 def pumper():
@@ -68,8 +80,14 @@ def pumper():
 		if not isinstance(x, Resize):
 			continue
 		full = x.full
+		if x.vid:
+			Popen(['ffmpeg', '-i', full,
+				'-pix_fmt', 'yuv420p',
+				'-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+				'-y', f'{x.loc}/{x.name}.mp4']).wait()
+			Popen(['kioclient5', 'move', full, 'trash:/']).wait()
+			continue
 		try:
-			# ext = x.ext + ('[0]' if x.ext == '.gif' else '')
 			with Image.open(full) as img:
 				fmt = img.format
 				dimensions = (round(img.width * x.pct), round(img.height * x.pct))
@@ -115,7 +133,8 @@ class ResizeWindow(BlimpWindow):
 			if not isinstance(x, Resize):
 				continue
 			dscrp = ''
-			if   x.asp >= aspect_wide: dscrp = ' (Wide Landscape)'
+			if x.vid: dscrp = ' (Animation)'
+			elif x.asp >= aspect_wide: dscrp = ' (Wide Landscape)'
 			elif x.asp <= aspect_tall: dscrp = ' (Tall Portrait)'
 			name = f'{x.name}{x.ext}\n{x.pct*100:.2f}%, {x.asp:.2f}{dscrp}'
 			date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(x.date))
