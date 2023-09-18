@@ -8,17 +8,25 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk
 
 loc: str = '.'
-isloc: bool = True
+isloc: int = 1
 files: list[str] = []
 
-def default_args(i: int):
+def opt_recursive(i: int) -> int:
+	global isloc ; isloc += 1
+	return 0
+opts = { '-r' : opt_recursive }
+
+def read_args():
 	global loc, isloc
+	i = 1
 	while i < len(argv):
-		if os.path.isdir(argv[i]):
+		if argv[i] in opts:
+			i += opts[argv[i]](i + 1)
+		elif os.path.isdir(argv[i]):
 			loc = argv[i][:-1] if argv[i][-1] == '/' else argv[i]
 		else: files.append(argv[i])
 		i += 1
-	if files: isloc = False
+	if files: isloc = 0
 
 loc = os.path.abspath(os.path.expanduser(loc))
 
@@ -35,8 +43,9 @@ def ogle(ogler: Callable):
 	blimps = []
 	if isloc:
 		for root, _, names in os.walk(loc):
-			files = [os.path.abspath(os.path.join(root, f)) for f in names]
-			break
+			files += [os.path.abspath(os.path.join(root, f)) for f in names]
+			if isloc < 2:
+				break
 	ogler(files)
 
 def open_file(filename: str):

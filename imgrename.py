@@ -118,15 +118,12 @@ class RenameWindow(BlimpWindow):
 			self.destroy()
 #end RenameWindow
 
-i, j = 1, len(argv) - 1
-while i <= j:
-	if os.path.exists(argv[i]):
-		break
-	elif argv[i] == '-p' and i < j:
-		i += 1
-		prepend = argv[i]
-	i += 1
-b.default_args(i)
+def opt_prepend(i: int) -> int:
+	global prepend ; prepend = argv[i]
+	return 1
+
+b.opts['-p'] = opt_prepend
+b.read_args()
 b.ogle(ogler)
 
 RenameWindow().show_all()

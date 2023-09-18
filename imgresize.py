@@ -10,6 +10,7 @@ from blimbo import Blimp, BlimpWindow, Gtk
 
 percent = 0
 minsize = 1.33 # megabytes
+types = ['.png', '.jpg', '.jpeg']
 
 aspect_wide = 7 / 4
 aspect_tall = 4 / 7
@@ -32,7 +33,6 @@ def ogler(files: list[str]):
 		namext = os.path.splitext(split[1])
 		loc, name, ext = split[0], namext[0], namext[1]
 		size = os.path.getsize(x) / 1024000
-		types = ['.png', '.jpg', '.jpeg']
 		if size >= minsize and (ext in types) or not b.isloc:
 			try:
 				with Image.open(x) as img:
@@ -135,19 +135,22 @@ class ResizeWindow(BlimpWindow):
 			self.destroy()
 #end ResizeWindow
 
-i, j = 1, len(argv) - 1
-while i <= j:
-	if os.path.exists(argv[i]):
-		break
-	elif i < j:
-		if argv[i] == '-p':
-			i += 1
-			percent = float(argv[i])
-		elif argv[i] == '-m':
-			i += 1
-			minsize = float(argv[i])
-	i += 1
-b.default_args(i)
+def opt_percent(i: int) -> int:
+	global percent ; percent = float(argv[i])
+	return 1
+
+def opt_minsize(i: int) -> int:
+	global minsize ; minsize = float(argv[i])
+	return 1
+
+def opt_types(i: int) -> int:
+	global types ; types = [f'.{x}' for x in argv[i].split(',')]
+	return 1
+
+b.opts['-p'] = opt_percent
+b.opts['-m'] = opt_minsize
+b.opts['-t'] = opt_types
+b.read_args()
 b.ogle(ogler)
 
 ResizeWindow().show_all()
